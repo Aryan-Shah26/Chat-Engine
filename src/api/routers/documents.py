@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from src.api.deps import get_collection_index, invalidate_collection_cache
+from src.api.deps import invalidate_collection_cache, get_collection_vectorstore
 from src.ingestion.pipeline import ingest_document
 from src.store import db
 from src.store.schemas import DocumentOut
@@ -31,9 +31,8 @@ async def upload_document(collection_id: str, file: UploadFile = File(...)):
 
     try:
         existing_docs = db.list_documents(collection_id)
-        vectorstore = None
-        if existing_docs:
-            _, _, vectorstore = get_collection_index(collection_id)
+        vectorstore = get_collection_vectorstore(collection_id) if existing_docs else None
+
         chunk_count, _, _, _ = ingest_document(tmp_path, collection_id, vectorstore=vectorstore)
     except ValueError as e:
         raise HTTPException(422, str(e))
