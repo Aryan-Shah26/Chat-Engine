@@ -4,9 +4,13 @@ from src.retrieval.hybrid_retriever import load_hybrid_index
 _retriever_cache: dict[str, tuple] = {}
 
 
-def get_llm_client() -> LLMClient:
-    return LLMClient()
+_llm_client: LLMClient | None = None
 
+def get_llm_client() -> LLMClient:
+    global _llm_client
+    if _llm_client is None:
+        _llm_client = LLMClient()
+    return _llm_client
 
 def get_collection_index(collection_id: str, top_k: int = 5, refresh: bool = False):
     """
