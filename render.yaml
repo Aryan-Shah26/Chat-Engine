@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: rag-chat-engine
+    env: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: CRITIC_MODEL
+        value: llama-3.1-8b-instant
+      - key: DATA_DIR
+        value: /app/data
+    disk:
+      name: rag-data
+      mountPath: /app/data
+      sizeGB: 1

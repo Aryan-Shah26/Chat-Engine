@@ -1,0 +1,37 @@
+# --- Core RAG Framework ---
+langchain
+langchain-community
+langchain-huggingface
+langgraph
+
+# --- Parsing ---
+pymupdf
+beautifulsoup4
+
+# --- Retrieval ---
+rank_bm25
+sentence-transformers
+chromadb
+
+# --- LLM ---
+groq
+
+# --- API ---
+fastapi
+uvicorn[standard]
+python-multipart
+
+# --- Config & Env ---
+pydantic
+pydantic-settings
+python-dotenv
+
+# --- UI (thin client) ---
+streamlit
+requests
+
+# --- Dev Tooling ---
+black
+ruff
+pytest
+httpx
