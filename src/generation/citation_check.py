@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import re
 
 from src.core.config import settings
@@ -28,21 +29,28 @@ def extract_cited_claims(answer: str) -> list[dict]:
 
 def verify_citations(client: LLMClient, claims: list[dict], retrieved_docs: list) -> list[dict]:
     """For each claim, asks the LLM whether the matching source doc actually supports it."""
+    if not claims:
+        return []
+
+    with ThreadPoolExecutor(max_workers=min(len(claims), 8)) as pool:
+        return list(pool.map(lambda c: _verify_one(client, c, retrieved_docs), claims))
+
+def _verify_one(client: LLMClient, claim: dict, retrieved_docs: list) -> dict:
     results = []
-    for claim in claims:
-        matching_docs = [
+    matching_docs = [
             doc for doc in retrieved_docs
             if doc.metadata.get("source") == claim["source"] and doc.metadata.get("page") == claim["page"]
-        ]
-        if not matching_docs:
+    ]
+    if not matching_docs:
             results.append({**claim, "verified": False})
-            continue
-        context = "\n\n".join(doc.page_content for doc in matching_docs)
-        verdict = client.complete(
+            return results
+    
+    context = "\n\n".join(doc.page_content for doc in matching_docs)
+    verdict = client.complete(
             [{"role": "user", "content": VERIFY_PROMPT.format(context=context, claim=claim["text"])}],
             max_tokens=5, temperature=0.0, model=settings.critic_model,
         )
-        results.append({**claim, "verified": verdict.strip().lower().startswith("yes")})
+    results.append({**claim, "verified": verdict.strip().lower().startswith("yes")})
     return results
 
 
