@@ -25,9 +25,10 @@ def parse_pdf(file_path: str | Path) -> list[dict]:
 def extract_tables(file_path: str | Path) -> list[dict]:
     """Extracts tables as markdown chunks tagged content_type=table, for the retrieval index."""
     file_path = Path(file_path)
-    doc = fitz.open(file_path)
-    tables = []
+    doc = None
     try:
+        doc = fitz.open(file_path)
+        tables = []
         for page in doc:
             found = page.find_tables()
             for i, table in enumerate(found.tables):
@@ -42,9 +43,11 @@ def extract_tables(file_path: str | Path) -> list[dict]:
                     },
                 })
         return tables
+    except Exception as e:
+        raise ValueError(f"Error extracting tables from '{file_path.name}': {e}")
     finally:
-        doc.close()
-
+        if doc is not None:
+            doc.close()
 
 def extract_images(file_path: str | Path) -> list[dict]:
     """
