@@ -61,3 +61,12 @@ def rerank(query: str, docs: list, top_k: int = 5) -> list:
     scores = reranker.predict(pairs)
     scored = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
     return [doc for doc, _ in scored[:top_k]]
+
+
+def rerank_with_scores(query: str, docs: list, top_k: int = 5) -> tuple[list, list[float]]:
+    """Like rerank() but also returns the cross-encoder scores of the top-k docs."""
+    reranker = get_reranker()
+    pairs = [(query, doc.page_content) for doc in docs]
+    scores = reranker.predict(pairs)
+    scored = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)[:top_k]
+    return [doc for doc, _ in scored], [round(float(s), 4) for _, s in scored]

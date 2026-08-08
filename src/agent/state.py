@@ -9,3 +9,4 @@ class AgentState(TypedDict):
     attempts: int
     answer: str
     sources: list[str]
+    metrics: dict            # instrumentation data from each node

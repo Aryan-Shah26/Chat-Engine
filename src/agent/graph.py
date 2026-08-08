@@ -1,3 +1,5 @@
+import time
+
 from langgraph.graph import END, StateGraph
 
 from src.agent.state import AgentState
@@ -23,16 +25,29 @@ def build_agent_graph(client: LLMClient, dense_retriever, bm25_retriever, top_k:
     """
 
     def planner(state: AgentState) -> AgentState:
+        t0 = time.perf_counter()
         queries = generate_multi_queries(client, state["question"], n=4)
-        return {**state, "plan": queries, "attempts": state["attempts"] + 1}
+        elapsed = round(time.perf_counter() - t0, 4)
+        m = dict(state.get("metrics", {}))
+        m["planner_sec"] = m.get("planner_sec", 0) + elapsed
+        m["planner_queries_generated"] = len(queries)
+        return {**state, "plan": queries, "attempts": state["attempts"] + 1, "metrics": m}
 
     def retriever(state: AgentState) -> AgentState:
+        t0 = time.perf_counter()
         docs = multi_query_hybrid_search(state["plan"], dense_retriever, bm25_retriever, top_k=top_k)
-        return {**state, "retrieved": docs}
+        elapsed = round(time.perf_counter() - t0, 4)
+        m = dict(state.get("metrics", {}))
+        m["retriever_sec"] = m.get("retriever_sec", 0) + elapsed
+        return {**state, "retrieved": docs, "metrics": m}
 
     def critic(state: AgentState) -> AgentState:
+        t0 = time.perf_counter()
         if not state["retrieved"]:
-            return {**state, "confidence": 0.0}
+            elapsed = round(time.perf_counter() - t0, 4)
+            m = dict(state.get("metrics", {}))
+            m["critic_sec"] = m.get("critic_sec", 0) + elapsed
+            return {**state, "confidence": 0.0, "metrics": m}
         context = "\n\n".join(doc.page_content for doc in state["retrieved"])
         score_str = client.complete(
             [{"role": "user", "content": CRITIC_PROMPT.format(question=state["question"], context=context)}],
@@ -42,11 +57,30 @@ def build_agent_graph(client: LLMClient, dense_retriever, bm25_retriever, top_k:
             score = float(score_str)
         except ValueError:
             score = 0.0
-        return {**state, "confidence": score}
+        elapsed = round(time.perf_counter() - t0, 4)
+        m = dict(state.get("metrics", {}))
+        m["critic_sec"] = m.get("critic_sec", 0) + elapsed
+        m["critic_confidence"] = round(score, 4)
+        # Track confidence history for delta computation
+        history = m.get("confidence_history", [])
+        history = list(history) + [round(score, 4)]
+        m["confidence_history"] = history
+        return {**state, "confidence": score, "metrics": m}
 
     def answer(state: AgentState) -> AgentState:
+        t0 = time.perf_counter()
         result = generate_answer(client, state["retrieved"], state["question"])
-        return {**state, "answer": result["answer"], "sources": result["sources"]}
+        elapsed = round(time.perf_counter() - t0, 4)
+        m = dict(state.get("metrics", {}))
+        m["answer_generation_sec"] = elapsed
+        m["retry_count"] = max(0, state["attempts"] - 1)
+        # Compute confidence improvement
+        history = m.get("confidence_history", [])
+        if len(history) >= 2:
+            m["confidence_improvement"] = round(history[-1] - history[0], 4)
+        else:
+            m["confidence_improvement"] = 0.0
+        return {**state, "answer": result["answer"], "sources": result["sources"], "metrics": m}
 
     def should_retry(state: AgentState) -> str:
         if state["confidence"] >= CONFIDENCE_THRESHOLD or state["attempts"] >= MAX_ATTEMPTS:
@@ -70,5 +104,6 @@ def run_agent(app, question: str) -> dict:
     initial_state: AgentState = {
         "question": question, "plan": [], "retrieved": [],
         "confidence": 0.0, "attempts": 0, "answer": "", "sources": [],
+        "metrics": {},
     }
     return app.invoke(initial_state)

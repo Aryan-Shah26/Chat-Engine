@@ -13,6 +13,13 @@ def get_llm_client() -> LLMClient:
         _llm_client = LLMClient()
     return _llm_client
 
+def get_collection_index(collection_id: str, top_k: int = 5):
+    """Lazily loads and caches (dense_retriever, bm25_retriever, vectorstore) for a collection."""
+    if collection_id not in _retriever_cache:
+        _retriever_cache[collection_id] = load_hybrid_index(collection_id, top_k=top_k)
+    return _retriever_cache[collection_id]
+
+
 def get_collection_vectorstore(collection_id: str, top_k: int = 5, refresh: bool = False):
     """
     Lazily loads and caches (dense_retriever, bm25_retriever, vectorstore) for
