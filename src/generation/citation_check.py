@@ -37,7 +37,7 @@ def extract_cited_claims(answer: str) -> list[dict]:
                     continue
 
                 page_str = match.group(2) or match.group(3)
-                page = int(page_str) if page_str and page_str.isdigit() else 1
+                page = int(page_str) if page_str and page_str.isdigit() else None
 
                 # Clean claim text for accurate LLM judge evaluation
                 clean_text = CITATION_PATTERN.sub("", sentence).strip()
@@ -65,7 +65,8 @@ def verify_citations(client: LLMClient, claims: list[dict], retrieved_docs: list
 
 def _verify_one(client: LLMClient, claim: dict, retrieved_docs: list) -> dict:
     claim_source = Path(claim["source"]).name.lower().strip()
-    claim_page = str(claim.get("page", "")).strip()
+    claim_page = claim.get("page")
+    claim_page = str(claim_page).strip() if claim_page is not None else None
 
     matching_docs = []
     for doc in retrieved_docs:
@@ -79,7 +80,8 @@ def _verify_one(client: LLMClient, claim: dict, retrieved_docs: list) -> dict:
         )
 
         page_matches = (
-            doc_page == claim_page
+            claim_page is None  # no page specified in citation → match any page
+            or doc_page == claim_page
             or (not doc_page and claim_page == "1")
             or (doc_page == "1" and not claim_page)
         )
@@ -111,7 +113,7 @@ def filter_hallucinated_citations(answer: str, verified_claims: list[dict]) -> s
         if not claim.get("verified", False):
             raw = claim.get("raw_citation")
             if raw and raw in answer:
-                answer = answer.replace(raw, "[unverified]")
+                answer = answer.replace(raw, "[unverified]", 1)
             else:
                 source_esc = re.escape(claim.get("source", ""))
                 page = claim.get("page")

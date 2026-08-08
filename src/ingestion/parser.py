@@ -26,20 +26,27 @@ def clean_extracted_text(text: str) -> str:
 
 
 def parse_pdf(file_path: str | Path) -> list[dict]:
+    file_path = Path(file_path)
+    doc = None
     try:
-        file_path = Path(file_path)
         pages = []
         doc = fitz.open(file_path)
         for page in doc:
-            raw_text = page.get_text()
-            text = clean_extracted_text(raw_text)
+            try:
+                raw_text = page.get_text()
+                text = clean_extracted_text(raw_text)
+            except Exception:
+                # Skip pages that fail text extraction (e.g. corrupt graphic streams)
+                continue
             if not text:
                 continue
             pages.append({"text": text, "metadata": {"source": file_path.name, "page": page.number + 1}})
-        doc.close()
         return pages
     except Exception as e:
-        raise ValueError(f"Error parsing '{Path(file_path).name}': {e}")
+        raise ValueError(f"Error parsing '{file_path.name}': {e}")
+    finally:
+        if doc is not None:
+            doc.close()
 
 
 def extract_tables(file_path: str | Path) -> list[dict]:
@@ -50,19 +57,23 @@ def extract_tables(file_path: str | Path) -> list[dict]:
         doc = fitz.open(file_path)
         tables = []
         for page in doc:
-            found = page.find_tables()
-            for i, table in enumerate(found.tables):
-                markdown = table.to_markdown()
-                cleaned_md = clean_extracted_text(markdown)
-                if not cleaned_md:
-                    continue
-                tables.append({
-                    "text": cleaned_md,
-                    "metadata": {
-                        "source": file_path.name, "page": page.number + 1,
-                        "content_type": "table", "table_index": i,
-                    },
-                })
+            try:
+                found = page.find_tables()
+                for i, table in enumerate(found.tables):
+                    markdown = table.to_markdown()
+                    cleaned_md = clean_extracted_text(markdown)
+                    if not cleaned_md:
+                        continue
+                    tables.append({
+                        "text": cleaned_md,
+                        "metadata": {
+                            "source": file_path.name, "page": page.number + 1,
+                            "content_type": "table", "table_index": i,
+                        },
+                    })
+            except Exception:
+                # Skip pages where table extraction fails (e.g. complex vector graphics)
+                continue
         return tables
     except Exception as e:
         raise ValueError(f"Error extracting tables from '{file_path.name}': {e}")

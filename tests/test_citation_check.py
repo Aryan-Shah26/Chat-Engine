@@ -75,7 +75,7 @@ def test_extract_cited_claims_markdown_bullets():
     assert len(claims) == 3
     assert claims[0]["source"] == "metrics.pdf" and claims[0]["page"] == 1
     assert claims[1]["source"] == "sla.pdf" and claims[1]["page"] == 5
-    assert claims[2]["source"] == "readme.txt" and claims[2]["page"] == 1
+    assert claims[2]["source"] == "readme.txt" and claims[2]["page"] is None
 
 
 def test_extract_cited_claims_ignores_unverified_tags():

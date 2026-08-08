@@ -92,13 +92,14 @@ def multi_source_search(query: str, dense_retriever, bm25_retriever, sources: li
     all_candidates = []
     all_dense = []
     all_sparse = []
+    # Execute BM25 once and filter per-source from cached results
+    all_sparse_raw = bm25_retriever.invoke(query) if bm25_retriever else []
     for source in sources:
         dense_docs = (
             dense_retriever.vectorstore.similarity_search(query, k=max(top_k_per_source * 4, 12), filter={"source": source})
             if hasattr(dense_retriever, "vectorstore") else dense_retriever.invoke(query)
         )
-        sparse_raw = bm25_retriever.invoke(query) if bm25_retriever else []
-        sparse_docs = [d for d in sparse_raw if d.metadata.get("source") == source]
+        sparse_docs = [d for d in all_sparse_raw if d.metadata.get("source") == source]
         all_dense.extend(dense_docs)
         all_sparse.extend(sparse_docs)
         fused = reciprocal_rank_fusion(dense_docs, sparse_docs)
@@ -106,8 +107,8 @@ def multi_source_search(query: str, dense_retriever, bm25_retriever, sources: li
         all_candidates.extend(per_source_docs)
 
     # Deduplicate any duplicate candidates across sources
-    unique_candidates = reciprocal_rank_fusion(all_candidates, [])
-    target_k = min(len(unique_candidates), max(len(sources), max_total))
+    unique_candidates = reciprocal_rank_fusion(all_candidates)
+    target_k = min(len(unique_candidates), max_total)
 
     if metrics is not None:
         docs, scores = rerank_with_scores(query, unique_candidates, top_k=target_k)
