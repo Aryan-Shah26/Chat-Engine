@@ -18,17 +18,41 @@ class LLMClient:
     def complete(
         self, messages: list[dict], max_tokens: int = 512, temperature: float = 0.2, model: str | None = None
     ) -> str:
+        target_model = model or self.model
         try:
             response = self._client.chat.completions.create(
-                model=model or self.model,
+                model=target_model,
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
             return response.choices[0].message.content.strip()
         except RateLimitError:
+            if target_model != settings.critic_model:
+                try:
+                    response = self._client.chat.completions.create(
+                        model=settings.critic_model,
+                        messages=messages,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                    return response.choices[0].message.content.strip()
+                except Exception:
+                    pass
             raise RuntimeError("Groq API rate limit reached. Please try again shortly.")
         except AuthenticationError:
             raise RuntimeError("Invalid Groq API key. Check your .env file.")
         except APIError as e:
+            if ("rate_limit_exceeded" in str(e) or "413" in str(e)) and target_model != settings.critic_model:
+                try:
+                    response = self._client.chat.completions.create(
+                        model=settings.critic_model,
+                        messages=messages,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                    return response.choices[0].message.content.strip()
+                except Exception:
+                    pass
             raise RuntimeError(f"Groq API error: {e}")
+

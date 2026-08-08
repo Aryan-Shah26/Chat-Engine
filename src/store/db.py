@@ -62,13 +62,26 @@ def list_collections() -> list[dict]:
 
 
 def register_document(collection_id: str, filename: str, chunk_count: int) -> dict:
-    did, ts = str(uuid.uuid4()), time.time()
+    ts = time.time()
     with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO documents (id, collection_id, filename, chunk_count, created_at) VALUES (?, ?, ?, ?, ?)",
-            (did, collection_id, filename, chunk_count, ts),
-        )
+        row = conn.execute(
+            "SELECT id FROM documents WHERE collection_id = ? AND filename = ?",
+            (collection_id, filename),
+        ).fetchone()
+        if row:
+            did = row["id"]
+            conn.execute(
+                "UPDATE documents SET chunk_count = ?, created_at = ? WHERE id = ?",
+                (chunk_count, ts, did),
+            )
+        else:
+            did = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO documents (id, collection_id, filename, chunk_count, created_at) VALUES (?, ?, ?, ?, ?)",
+                (did, collection_id, filename, chunk_count, ts),
+            )
     return {"id": did, "collection_id": collection_id, "filename": filename, "chunk_count": chunk_count}
+
 
 
 def list_documents(collection_id: str) -> list[dict]:

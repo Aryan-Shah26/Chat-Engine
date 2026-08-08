@@ -13,7 +13,7 @@ def generate_answer(client: LLMClient, retrieved_docs: list, question: str) -> d
         f"[{doc.metadata['source']} - Page {doc.metadata['page']}]: {doc.page_content}"
         for doc in retrieved_docs
     )
-    answer = client.complete(get_messages(context, question), max_tokens=1024, temperature=0.2)
+    answer = client.complete(get_messages(context, question), max_tokens=2048, temperature=0.1)
     return {
         "answer": answer,
         "sources": [f"{doc.metadata['source']} - Page {doc.metadata['page']}" for doc in retrieved_docs],

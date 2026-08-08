@@ -83,19 +83,18 @@ def multi_query_hybrid_search(queries: list[str], dense_retriever, bm25_retrieve
     return rerank(queries[0], fused, top_k=top_k)
 
 
-def multi_source_search(query: str, dense_retriever, bm25_retriever, sources: list[str], top_k_per_source: int = 3, metrics=None) -> list:
+def multi_source_search(query: str, dense_retriever, bm25_retriever, sources: list[str], top_k_per_source: int = 2, max_total: int = 8, metrics=None) -> list:
     """
     For cross-document questions ("compare X across all sources"). Runs hybrid
     search once per source filename so every document gets guaranteed
-    representation instead of the top-k being dominated by one document's chunks.
+    representation, then globally reranks candidates to provide the best context.
     """
-    all_docs = []
-    all_scores = []
+    all_candidates = []
     all_dense = []
     all_sparse = []
     for source in sources:
         dense_docs = (
-            dense_retriever.vectorstore.similarity_search(query, k=top_k_per_source * 4, filter={"source": source})
+            dense_retriever.vectorstore.similarity_search(query, k=max(top_k_per_source * 4, 12), filter={"source": source})
             if hasattr(dense_retriever, "vectorstore") else dense_retriever.invoke(query)
         )
         sparse_raw = bm25_retriever.invoke(query) if bm25_retriever else []
@@ -103,22 +102,24 @@ def multi_source_search(query: str, dense_retriever, bm25_retriever, sources: li
         all_dense.extend(dense_docs)
         all_sparse.extend(sparse_docs)
         fused = reciprocal_rank_fusion(dense_docs, sparse_docs)
+        per_source_docs = rerank(query, fused, top_k=top_k_per_source)
+        all_candidates.extend(per_source_docs)
 
-        if metrics is not None:
-            docs, scores = rerank_with_scores(query, fused, top_k=top_k_per_source)
-            all_docs.extend(docs)
-            all_scores.extend(scores)
-        else:
-            all_docs.extend(rerank(query, fused, top_k=top_k_per_source))
+    # Deduplicate any duplicate candidates across sources
+    unique_candidates = reciprocal_rank_fusion(all_candidates, [])
+    target_k = min(len(unique_candidates), max(len(sources), max_total))
 
     if metrics is not None:
+        docs, scores = rerank_with_scores(query, unique_candidates, top_k=target_k)
         metrics.record("dense_sparse_overlap", _compute_overlap(all_dense, all_sparse))
-        if all_scores:
-            metrics.record("reranker_scores", [round(float(s), 4) for s in all_scores])
-            metrics.record("avg_reranker_score", round(sum(all_scores) / len(all_scores), 4))
-            metrics.record("min_reranker_score", round(min(all_scores), 4))
-            metrics.record("max_reranker_score", round(max(all_scores), 4))
-        metrics.record("chunks_retrieved", len(all_docs))
-        metrics.record("unique_sources", len({d.metadata.get("source") for d in all_docs}))
+        if scores:
+            metrics.record("reranker_scores", [round(float(s), 4) for s in scores])
+            metrics.record("avg_reranker_score", round(sum(scores) / len(scores), 4))
+            metrics.record("min_reranker_score", round(min(scores), 4))
+            metrics.record("max_reranker_score", round(max(scores), 4))
+        metrics.record("chunks_retrieved", len(docs))
+        metrics.record("unique_sources", len({d.metadata.get("source") for d in docs}))
+        return docs
 
-    return all_docs
+    return rerank(query, unique_candidates, top_k=target_k)
+

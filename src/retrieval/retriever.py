@@ -37,22 +37,34 @@ def build_chroma_retriever(chunks: list[dict], collection_id: str, top_k: int = 
         texts=texts, embedding=embedder, metadatas=metadatas,
         persist_directory=_chroma_path(collection_id),
     )
-    return vectorstore.as_retriever(search_kwargs={"k": top_k * 4}), vectorstore
+    return vectorstore.as_retriever(search_kwargs={"k": max(top_k * 6, 36)}), vectorstore
 
 
 def load_chroma_retriever(collection_id: str, top_k: int = 5):
     """Loads a persisted Chroma retriever for a collection_id."""
     embedder = get_embedder()
     vectorstore = Chroma(persist_directory=_chroma_path(collection_id), embedding_function=embedder)
-    return vectorstore.as_retriever(search_kwargs={"k": top_k * 4}), vectorstore
+    return vectorstore.as_retriever(search_kwargs={"k": max(top_k * 6, 36)}), vectorstore
 
 
 def add_chroma_retriever(chunks: list[dict], vectorstore: Chroma):
-    """Adds new chunks to an existing Chroma retriever."""
+    """Adds new chunks to an existing Chroma retriever, replacing previous chunks for the same source."""
+    if not chunks:
+        return
+    # Delete old chunks for any source being updated
+    sources_to_update = {c.get("metadata", {}).get("source") for c in chunks if c.get("metadata")}
+    for src in sources_to_update:
+        if src:
+            try:
+                vectorstore.delete(where={"source": src})
+            except Exception:
+                pass
+
     vectorstore.add_texts(
         texts=[c["text"] for c in chunks],
         metadatas=[c["metadata"] for c in chunks],
     )
+
 
 
 def rerank(query: str, docs: list, top_k: int = 5) -> list:

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import fitz
@@ -6,14 +7,33 @@ from bs4 import BeautifulSoup
 IMAGE_DIR = "data/extracted_images"
 
 
+def clean_extracted_text(text: str) -> str:
+    """Normalizes glyphs, private-use bullets, whitespace, and line breaks from extracted text."""
+    if not text:
+        return ""
+    # Normalize private-use bullets and common bullet glyphs
+    text = re.sub(r"[\uf0b7\uf0a7\u2022\u25aa\u25cf\u25e6\u2043\u2219]", "• ", text)
+    # Normalize non-breaking spaces and zero-width spaces
+    text = re.sub(r"[\u202f\xa0\u200b\u200e\u200f\ufeff]", " ", text)
+    # Fix hyphenated words broken across lines
+    text = re.sub(r"(\b[a-zA-Z]+)-\n([a-zA-Z]+\b)", r"\1\2", text)
+    # Normalize multiple whitespace within lines while preserving linebreaks
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
+    text = "\n".join(lines)
+    # Normalize multiple empty lines to max 2
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
 def parse_pdf(file_path: str | Path) -> list[dict]:
     try:
         file_path = Path(file_path)
         pages = []
         doc = fitz.open(file_path)
         for page in doc:
-            text = page.get_text()
-            if not text.strip():
+            raw_text = page.get_text()
+            text = clean_extracted_text(raw_text)
+            if not text:
                 continue
             pages.append({"text": text, "metadata": {"source": file_path.name, "page": page.number + 1}})
         doc.close()
@@ -33,10 +53,11 @@ def extract_tables(file_path: str | Path) -> list[dict]:
             found = page.find_tables()
             for i, table in enumerate(found.tables):
                 markdown = table.to_markdown()
-                if not markdown.strip():
+                cleaned_md = clean_extracted_text(markdown)
+                if not cleaned_md:
                     continue
                 tables.append({
-                    "text": markdown,
+                    "text": cleaned_md,
                     "metadata": {
                         "source": file_path.name, "page": page.number + 1,
                         "content_type": "table", "table_index": i,
@@ -48,6 +69,7 @@ def extract_tables(file_path: str | Path) -> list[dict]:
     finally:
         if doc is not None:
             doc.close()
+
 
 def extract_images(file_path: str | Path) -> list[dict]:
     """
@@ -78,7 +100,8 @@ def parse_html(file_path: str | Path) -> list[dict]:
         file_path = Path(file_path)
         with open(file_path, "r", encoding="utf-8") as f:
             soup = BeautifulSoup(f, "html.parser")
-            text = soup.get_text(separator="\n", strip=True)
+            raw_text = soup.get_text(separator="\n", strip=True)
+            text = clean_extracted_text(raw_text)
         return [{"text": text, "metadata": {"source": file_path.name, "page": 1}}]
     except Exception as e:
         raise ValueError(f"Error parsing '{Path(file_path).name}': {e}")
@@ -86,7 +109,8 @@ def parse_html(file_path: str | Path) -> list[dict]:
 
 def parse_text(file_path: str | Path) -> list[dict]:
     file_path = Path(file_path)
-    text = file_path.read_text(encoding="utf-8", errors="ignore")
+    raw_text = file_path.read_text(encoding="utf-8", errors="ignore")
+    text = clean_extracted_text(raw_text)
     return [{"text": text, "metadata": {"source": file_path.name, "page": 1}}]
 
 
@@ -101,3 +125,4 @@ def parse_file(file_path: str | Path) -> list[dict]:
         return parse_text(file_path)
     else:
         raise ValueError(f"Unsupported format: {suffix}")
+

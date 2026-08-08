@@ -70,16 +70,9 @@ def chat(collection_id: str, payload: ChatRequest):
         mc.record("citations_extracted", len(claims))
         if claims:
             verified = verify_citations(client, claims, docs)
-            # verified is a list of dicts or list of lists — flatten
-            flat_verified = []
-            for v in verified:
-                if isinstance(v, list):
-                    flat_verified.extend(v)
-                else:
-                    flat_verified.append(v)
-            num_verified = sum(1 for c in flat_verified if c.get("verified", False))
+            num_verified = sum(1 for c in verified if (isinstance(c, dict) and c.get("verified", False)))
             mc.record("citations_verified", num_verified)
-            answer = filter_hallucinated_citations(answer, flat_verified)
+            answer = filter_hallucinated_citations(answer, verified)
         else:
             mc.record("citations_verified", 0)
         mc.stop_timer("citation_verification")
